@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>DPaint CopperHTML5</title>
+    <title>DPaint Copper HTML5</title>
     <style>
         body {
             background-color: #1a1a1a;
@@ -74,7 +74,7 @@
             display: flex;
             flex-direction: column;
             gap: 10px;
-            width: 220px;
+            width: 240px;
         }
         #palette-scroll {
             height: 240px;
@@ -83,20 +83,33 @@
             border: 1px solid #444;
             padding: 4px;
         }
+        #palette-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
         .palette-row {
             display: flex;
             align-items: center;
-            gap: 6px;
-            font-size: 0.7rem;
-            margin-bottom: 2px;
-            padding: 2px;
+            gap: 8px;
+            font-size: 0.75rem;
+            padding: 4px;
             cursor: pointer;
+            border: 1px solid transparent;
+            background: #1e1e1e;
         }
-        .palette-row.active-row { background: #333; border: 1px solid #449d44;}
+        .palette-row:hover {
+            background: #2b2b2b;
+        }
+        .palette-row.active-row { 
+            background: #3a5f3a; 
+            border: 1px solid #5cb85c;
+        }
         .color-box {
-            width: 24px;
-            height: 16px;
-            border: 1px solid #888;
+            width: 28px;
+            height: 18px;
+            border: 1px solid #aaa;
+            flex-shrink: 0;
         }
         .copper-panel, .rgb-editor {
             background: #222;
@@ -145,7 +158,7 @@
 </head>
 <body>
 
-    <h1>DPAINT COPPER</h1>
+    <h1>DPaint Copper HTML5</h1>
     
     <div id="main-container">
         <div id="toolbox">
@@ -168,16 +181,18 @@
 
             <div class="panel-title" style="margin-top:4px;">CHIPSET OCS/AGA</div>
             <select id="bpp-select" onchange="changeBPP()" style="background:#3a3a3a; color:#fff; width:100%; padding:3px; font-size:0.7rem;">
-                <option value="1">2 Colores (1 BPP)</option>
-                <option value="2">4 Colores (2 BPP)</option>
-                <option value="3">8 Colores (3 BPP)</option>
-                <option value="4">16 Colores (4 BPP)</option>
-                <option value="5" selected>32 Colores (5 BPP)</option>
-                <option value="8">256 Colores (8 BPP)</option>
+                <option value="1">1 Bitplane (2 Colores)</option>
+                <option value="2">2 Bitplanes (4 Colores)</option>
+                <option value="3">3 Bitplanes (8 Colores)</option>
+                <option value="4">4 Bitplanes (16 Colores)</option>
+                <option value="5" selected>5 Bitplanes (32 Colores)</option>
+                <option value="8">8 Bitplanes (256 Colores)</option>
             </select>
 
-            <div class="panel-title" style="margin-top:4px;">EXPORTAR</div>
-            <div class="btn" onclick="triggerIFFDownload()" style="background:#aa6600;">DESCARGAR .IFF</div>
+            <div class="panel-title" style="margin-top:4px;">E/S ARCHIVOS IFF</div>
+            <div class="btn" onclick="document.getElementById('iff-file-input').click();" style="background:#0055aa;">CARGAR .IFF / .PCHG</div>
+            <input type="file" id="iff-file-input" accept=".iff,.lbm" style="display:none;" onchange="loadIFFFile(this)">
+            <div class="btn" onclick="triggerIFFDownload()" style="background:#aa6600; margin-top:2px;">DESCARGAR .IFF (.PCHG)</div>
         </div>
 
         <div id="canvas-wrapper">
@@ -225,11 +240,10 @@
     </div>
 
 <script>
-    // --- Configuración básica de pantalla Amiga OCS ---
     const canvas = document.getElementById('paintCanvas');
     const ctx = canvas.getContext('2d');
-    const width = canvas.width;
-    const height = canvas.height;
+    let width = canvas.width;
+    let height = canvas.height;
 
     let currentTool = 'draw';
     let numColors = 32;
@@ -247,23 +261,62 @@
 
     let customBrush = { width: 0, height: 0, pixels: null };
 
+    // PALETA ARTÍSTICA DE VENUS (DELUXEPAINT)
+    const venusAmigaPalette = [
+        {r: 0,   g: 0,   b: 0},   
+        {r: 55,  g: 85,  b: 115}, 
+        {r: 110, g: 170, b: 230}, 
+        {r: 165, g: 255, b: 89},  
+        {r: 220, g: 84,  b: 204}, 
+        {r: 19,  g: 147, b: 63},  
+        {r: 74,  g: 254, b: 178}, 
+        {r: 129, g: 83,  b: 37},  
+        {r: 184, g: 168, b: 152}, 
+        {r: 239, g: 253, b: 11},  
+        {r: 20,  g: 60,  b: 140}, 
+        {r: 240, g: 190, b: 140}, 
+        {r: 180, g: 110, b: 60},  
+        {r: 230, g: 140, b: 40},  
+        {r: 100, g: 130, b: 150}, 
+        {r: 255, g: 255, b: 255}  
+    ];
+
     function init() {
         initPalette(32);
+        // NUEVO: La imagen a editar empieza completamente plana/limpia con el Color Index 0
         pixelBuffer.fill(0);
-        buildPaletteUI();
-        syncRGBSliders();
-        renderCanvas();
-        updateOutputs();
+
+        setTimeout(() => {
+            buildPaletteUI();
+            syncRGBSliders();
+            renderCanvas();
+            updateOutputs();
+        }, 50);
     }
 
     function initPalette(qty) {
         numColors = qty;
         basePalette = [];
-        for(let i=0; i<256; i++) {
-            let r = Math.floor((i * 55) % 256);
-            let g = Math.floor((i * 85) % 256);
-            let b = Math.floor((i * 115) % 256);
-            basePalette.push({r, g, b});
+
+        if (numColors === 2) {
+            basePalette.push(venusAmigaPalette[0]); 
+            basePalette.push(venusAmigaPalette[15]);
+        } else if (numColors === 4) {
+            basePalette.push(venusAmigaPalette[0]); 
+            basePalette.push(venusAmigaPalette[1]); 
+            basePalette.push(venusAmigaPalette[7]); 
+            basePalette.push(venusAmigaPalette[15]);
+        } else {
+            for (let i = 0; i < numColors; i++) {
+                if (i < venusAmigaPalette.length) {
+                    basePalette.push(venusAmigaPalette[i]);
+                } else {
+                    let r = Math.floor((i * 45) % 256);
+                    let g = Math.floor((i * 75) % 256);
+                    let b = Math.floor((i * 105) % 256);
+                    basePalette.push({r, g, b});
+                }
+            }
         }
         if(activeColorIndex >= numColors) activeColorIndex = 0;
     }
@@ -274,9 +327,177 @@
         buildPaletteUI();
         syncRGBSliders();
         renderCanvas();
+        updateOutputs();
     }
 
-    function renderCanvas(targetBuf = pixelBuffer, displayY = lockedCopperY) {
+    // NUEVO: MOTOR DESCOMPRESOR Y LECTOR COMPLETO DE ARCHIVOS IFF ILBM / PCHG
+    function loadIFFFile(input) {
+        if (!input.files || !input.files[0]) return;
+        let file = input.files[0];
+        let reader = new FileReader();
+
+        reader.onload = function(e) {
+            let buffer = e.target.result;
+            let view = new DataView(buffer);
+            let bytes = new Uint8Array(buffer);
+
+            // Validación de cabecera IFF básica
+            let formStr = String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]);
+            let typeStr = String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11]);
+            if (formStr !== "FORM" || (typeStr !== "ILBM" && typeStr !== "PBM ")) {
+                alert("Error: No es un archivo IFF ILBM / PBM válido de Amiga.");
+                return;
+            }
+
+            let iffWidth = 320, iffHeight = 256, iffBpp = 5, compression = 0;
+            let loadedPalette = [];
+            let loadedCopper = {};
+            let bodyOffset = 0, bodySize = 0;
+
+            let offset = 12;
+            while (offset < buffer.byteLength - 8) {
+                let chunkId = String.fromCharCode(bytes[offset], bytes[offset+1], bytes[offset+2], bytes[offset+3]);
+                let chunkSize = view.getUint32(offset + 4, false);
+                let chunkStart = offset + 8;
+
+                if (chunkId === "BMHD") {
+                    iffWidth = view.getUint16(chunkStart, false);
+                    iffHeight = view.getUint16(chunkStart + 2, false);
+                    iffBpp = view.getUint8(chunkStart + 8);
+                    compression = view.getUint8(chunkStart + 10);
+                } 
+                else if (chunkId === "CMAP") {
+                    let totalColorsInChunk = chunkSize / 3;
+                    for (let c = 0; c < totalColorsInChunk; c++) {
+                        loadedPalette.push({
+                            r: view.getUint8(chunkStart + c * 3),
+                            g: view.getUint8(chunkStart + c * 3 + 1),
+                            b: view.getUint8(chunkStart + c * 3 + 2)
+                        });
+                    }
+                } 
+                else if (chunkId === "PCHG") {
+                    // Procesamiento del Chunk PCHG (Palette Changes)
+                    let lineCount = view.getUint16(chunkStart + 6, false);
+                    let changedLinesCount = view.getUint16(chunkStart + 8, false);
+                    
+                    let lineMaskLongwords = Math.ceil(lineCount / 32);
+                    let maskOffset = chunkStart + 20;
+                    let dataOffset = maskOffset + (lineMaskLongwords * 4);
+
+                    let activeChangedLines = [];
+                    for (let y = 0; y < lineCount; y++) {
+                        let wordIdx = Math.floor(y / 32);
+                        let bitPosition = 31 - (y % 32);
+                        let mask = view.getUint32(maskOffset + wordIdx * 4, false);
+                        if ((mask & (1 << bitPosition)) !== 0) {
+                            activeChangedLines.push(y);
+                        }
+                    }
+
+                    activeChangedLines.forEach(y => {
+                        let c16 = view.getUint8(dataOffset);
+                        let c32 = view.getUint8(dataOffset + 1);
+                        let uword = view.getUint16(dataOffset + 2, false);
+                        dataOffset += 4;
+
+                        let regIndex = (uword >> 12) & 0x0F;
+                        if (c32 > 0) regIndex += 16; // Si modifica los registros superiores de OCS (16-31)
+
+                        let r4 = (uword >> 8) & 0x0F;
+                        let g4 = (uword >> 4) & 0x0F;
+                        let b4 = uword & 0x0F;
+
+                        let hexColor = "#" + ((r4*17) << 16 | (g4*17) << 8 | (b4*17)).toString(16).padStart(6, '0').toUpperCase();
+                        loadedCopper[y] = { index: regIndex, color: hexColor };
+                    });
+                } 
+                else if (chunkId === "BODY") {
+                    bodyOffset = chunkStart;
+                    bodySize = chunkSize;
+                }
+
+                offset += 8 + chunkSize;
+                if (chunkSize % 2 !== 0) offset++; // Alineación WORD de IFF
+            }
+
+            // Aplicar configuraciones al lienzo HTML5
+            canvas.width = iffWidth;
+            canvas.height = iffHeight;
+            width = iffWidth;
+            height = iffHeight;
+
+            numColors = Math.pow(2, iffBpp);
+            document.getElementById('bpp-select').value = iffBpp;
+
+            if (loadedPalette.length > 0) {
+                basePalette = loadedPalette;
+            } else {
+                initPalette(numColors);
+            }
+
+            copperChanges = loadedCopper;
+            pixelBuffer = new Uint8Array(width * height);
+
+            // Descompresión del BODY planar
+            let rowBytes = Math.ceil(width / 8);
+            let planeSize = rowBytes * height;
+            let srcIdx = bodyOffset;
+
+            // RLE Decompression (ByteRun1)
+            let decompressedBody;
+            if (compression === 1) {
+                let outSize = rowBytes * iffBpp * height;
+                decompressedBody = new Uint8Array(outSize);
+                let dstIdx = 0;
+                while (dstIdx < outSize && srcIdx < bodyOffset + bodySize) {
+                    let code = bytes[srcIdx++];
+                    if (code >= 0 && code <= 127) {
+                        let run = code + 1;
+                        for (let k = 0; k < run; k++) decompressedBody[dstIdx++] = bytes[srcIdx++];
+                    } else if (code >= 129 && code <= 255) {
+                        let run = 256 - code + 1;
+                        let val = bytes[srcIdx++];
+                        for (let k = 0; k < run; k++) decompressedBody[dstIdx++] = val;
+                    }
+                }
+            } else {
+                decompressedBody = bytes.subarray(bodyOffset, bodyOffset + bodySize);
+            }
+
+            // Convertir de formato Amiga Planar a Buffer Lineal de Pixeles
+            let bodyReadIdx = 0;
+            for (let y = 0; y < height; y++) {
+                let scanlinePlanar = [];
+                for (let p = 0; p < iffBpp; p++) {
+                    scanlinePlanar.push(decompressedBody.subarray(bodyReadIdx, bodyReadIdx + rowBytes));
+                    bodyReadIdx += rowBytes;
+                }
+
+                for (let x = 0; x < width; x++) {
+                    let byteIdx = Math.floor(x / 8);
+                    let bitIdx = 7 - (x % 8);
+                    let colorIndex = 0;
+
+                    for (let p = 0; p < iffBpp; p++) {
+                        let bit = (scanlinePlanar[p][byteIdx] >> bitIdx) & 1;
+                        colorIndex |= (bit << p);
+                    }
+                    pixelBuffer[y * width + x] = colorIndex;
+                }
+            }
+
+            // Forzar refresco visual e interfaz
+            buildPaletteUI();
+            syncRGBSliders();
+            renderCanvas();
+            updateOutputs();
+        };
+
+        reader.readAsArrayBuffer(file);
+    }
+
+    function renderCanvas(targetBuf = pixelBuffer) {
         let imgData = ctx.createImageData(width, height);
         let data = imgData.data;
         let activePalette = basePalette.map(c => ({...c}));
@@ -284,7 +505,9 @@
         for (let y = 0; y < height; y++) {
             if (copperChanges[y]) {
                 let change = copperChanges[y];
-                activePalette[change.index] = hexToRgb(change.color);
+                if (change.index < numColors) {
+                    activePalette[change.index] = hexToRgb(change.color);
+                }
             }
 
             for (let x = 0; x < width; x++) {
@@ -307,11 +530,15 @@
         for (let y = 0; y <= targetY; y++) {
             if (copperChanges[y]) {
                 let change = copperChanges[y];
-                activePalette[change.index] = hexToRgb(change.color);
+                if (change.index < numColors) {
+                    activePalette[change.index] = hexToRgb(change.color);
+                }
             }
         }
 
         const grid = document.getElementById('palette-grid');
+        if (!grid) return;
+        
         grid.innerHTML = '';
         for(let i = 0; i < numColors; i++) {
             let item = document.createElement('div');
@@ -335,11 +562,16 @@
             item.appendChild(label);
             grid.appendChild(item);
         }
-        document.getElementById('line-indicator').innerText = `Línea Y a editar: ${targetY}`;
+        
+        let indicator = document.getElementById('line-indicator');
+        if (indicator) {
+            indicator.innerText = `Línea Y a editar: ${targetY}`;
+        }
     }
 
     function syncRGBSliders() {
         let c = basePalette[activeColorIndex];
+        if(!c) return;
         document.getElementById('slide-r').value = c.r;
         document.getElementById('slide-g').value = c.g;
         document.getElementById('slide-b').value = c.b;
@@ -362,6 +594,7 @@
         
         renderCanvas();
         buildPaletteUI(lockedCopperY);
+        updateOutputs();
     }
 
     function updateActiveColorRGB(hex) {
@@ -369,6 +602,7 @@
         syncRGBSliders();
         renderCanvas();
         buildPaletteUI(lockedCopperY);
+        updateOutputs();
     }
 
     function setTool(tool) {
@@ -422,11 +656,7 @@
 
     canvas.addEventListener('mousemove', (e) => {
         let pos = getMousePos(e);
-
-        if (currentTool === 'copper-line') {
-            buildPaletteUI(pos.y); 
-        }
-
+        if (currentTool === 'copper-line') buildPaletteUI(pos.y); 
         if (!isDrawing) return;
 
         if (currentTool === 'draw') {
@@ -442,7 +672,6 @@
             if (currentTool === 'brush-grab') drawRect(startX, startY, pos.x, pos.y, 0, false, tempBuffer); 
             renderCanvas(tempBuffer);
         }
-
         lastX = pos.x;
         lastY = pos.y;
     });
@@ -473,7 +702,6 @@
         }
     });
 
-    // --- Algoritmos del Motor de Dibujo ---
     function drawLineBresenham(x0, y0, x1, y1, color, buffer) {
         let dx = Math.abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
         let dy = -Math.abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
@@ -499,62 +727,30 @@
         }
     }
 
-    // --- Algoritmo de Elipse de Punto Medio (Soporta Formas Ovaladas Extensibles) ---
     function drawEllipse(x0, y0, x1, y1, color, fill, buffer) {
-        let xc = Math.floor((x0 + x1) / 2);
-        let yc = Math.floor((y0 + y1) / 2);
-        let rx = Math.abs(x1 - x0) / 2;
-        let ry = Math.abs(y1 - y0) / 2;
-
+        let xc = Math.floor((x0 + x1) / 2), yc = Math.floor((y0 + y1) / 2);
+        let rx = Math.abs(x1 - x0) / 2, ry = Math.abs(y1 - y0) / 2;
         if (rx < 1 || ry < 1) return;
-
-        let x = 0;
-        let y = ry;
-
-        // Región 1
+        let x = 0, y = ry;
         let d1 = (ry * ry) - (rx * rx * ry) + (0.25 * rx * rx);
-        let dx = 2 * ry * ry * x;
-        let dy = 2 * rx * rx * y;
+        let dx = 2 * ry * ry * x, dy = 2 * rx * rx * y;
 
         while (dx < dy) {
             plotEllipsePoints(xc, yc, x, y, color, fill, buffer);
-            if (d1 < 0) {
-                x++;
-                dx = dx + (2 * ry * ry);
-                d1 = d1 + dx + (ry * ry);
-            } else {
-                x++;
-                y--;
-                dx = dx + (2 * ry * ry);
-                dy = dy - (2 * rx * rx);
-                d1 = d1 + dx - dy + (ry * ry);
-            }
+            if (d1 < 0) { x++; dx += (2 * ry * ry); d1 += dx + (ry * ry); } 
+            else { x++; y--; dx += (2 * ry * ry); dy -= (2 * rx * rx); d1 += dx - dy + (ry * ry); }
         }
-
-        // Región 2
         let d2 = ((ry * ry) * ((x + 0.5) * (x + 0.5))) + ((rx * rx) * ((y - 1) * (y - 1))) - (rx * rx * ry * ry);
         while (y >= 0) {
             plotEllipsePoints(xc, yc, x, y, color, fill, buffer);
-            if (d2 > 0) {
-                y--;
-                dy = dy - (2 * rx * rx);
-                d2 = d2 + (rx * rx) - dy;
-            } else {
-                y--;
-                x++;
-                dx = dx + (2 * ry * ry);
-                dy = dy - (2 * rx * rx);
-                d2 = d2 + dx - dy + (rx * rx);
-            }
+            if (d2 > 0) { y--; dy -= (2 * rx * rx); d2 += (rx * rx) - dy; } 
+            else { y--; x++; dx += (2 * ry * ry); dy -= (2 * rx * rx); d2 += dx - dy + (rx * rx); }
         }
     }
 
     function plotEllipsePoints(xc, yc, x, y, color, fill, buffer) {
-        let ix = Math.floor(x);
-        let iy = Math.floor(y);
-
+        let ix = Math.floor(x), iy = Math.floor(y);
         if (fill) {
-            // El óvalo relleno traza líneas horizontales uniendo los extremos simétricos
             for (let i = xc - ix; i <= xc + ix; i++) {
                 if (i >= 0 && i < width) {
                     if (yc + iy < height && yc + iy >= 0) buffer[(yc + iy) * width + i] = color;
@@ -562,7 +758,6 @@
                 }
             }
         } else {
-            // Contorno libre
             if (xc + ix < width && yc + iy < height && xc + ix >= 0 && yc + iy >= 0) buffer[(yc + iy) * width + (xc + ix)] = color;
             if (xc - ix >= 0 && yc + iy < height && xc - ix < width && yc + iy >= 0) buffer[(yc + iy) * width + (xc - ix)] = color;
             if (xc + ix < width && yc - iy >= 0 && xc + ix >= 0 && yc - iy < height) buffer[(yc - iy) * width + (xc + ix)] = color;
@@ -588,16 +783,11 @@
     function pasteBrush(tx, ty) {
         if(!customBrush.pixels) return;
         let idx = 0;
-        let halfW = Math.floor(customBrush.width / 2);
-        let halfH = Math.floor(customBrush.height / 2);
-        
+        let halfW = Math.floor(customBrush.width / 2), halfH = Math.floor(customBrush.height / 2);
         for(let bY = 0; bY < customBrush.height; bY++) {
             for(let bX = 0; bX < customBrush.width; bX++) {
-                let ox = tx - halfW + bX;
-                let oy = ty - halfH + bY;
-                if(ox >= 0 && ox < width && oy >= 0 && oy < height) {
-                    pixelBuffer[oy * width + ox] = customBrush.pixels[idx];
-                }
+                let ox = tx - halfW + bX, oy = ty - halfH + bY;
+                if(ox >= 0 && ox < width && oy >= 0 && oy < height) pixelBuffer[oy * width + ox] = customBrush.pixels[idx];
                 idx++;
             }
         }
@@ -606,62 +796,97 @@
     function applyCopperChange(hexColor) {
         if (lockedCopperY < 0 || lockedCopperY >= height) return;
         copperChanges[lockedCopperY] = { index: activeColorIndex, color: hexColor };
-        renderCanvas();
-        buildPaletteUI(lockedCopperY);
+        renderCanvas(); 
+        buildPaletteUI(lockedCopperY); 
         updateOutputs();
     }
 
     function clearCopperLine() {
         if (lockedCopperY < 0) return;
         delete copperChanges[lockedCopperY];
-        renderCanvas();
-        buildPaletteUI(lockedCopperY);
+        renderCanvas(); 
+        buildPaletteUI(lockedCopperY); 
         updateOutputs();
     }
 
     function updateOutputs() {
         let asm = "; COLOQUE ESTE CÓDIGO EN SU LISTA DEL COPPER EN ENSAMBLADOR\n\n";
-        let cCode = "/* Estructura indexada por hardware para Amiga OCS */\n";
-        cCode += "typedef struct {\n    unsigned char scanline;\n    unsigned short regOffset;\n    unsigned short rgb12bit;\n} CopperInterrupt;\n\n";
-        cCode += "const CopperInterrupt copper_timeline[] = {\n";
-
+        let cCode = "/* Estructura indexada por hardware para Amiga OCS */\ntypedef struct {\n    unsigned char scanline;\n    unsigned short regOffset;\n    unsigned short rgb12bit;\n} CopperInterrupt;\n\nconst CopperInterrupt copper_timeline[] = {\n";
         let sortedLines = Object.keys(copperChanges).sort((a,b) => a-b);
         
         sortedLines.forEach(y => {
             let change = copperChanges[y];
             let rgb = hexToRgb(change.color);
-            let r4 = Math.floor(rgb.r / 16).toString(16);
-            let g4 = Math.floor(rgb.g / 16).toString(16);
-            let b4 = Math.floor(rgb.b / 16).toString(16);
+            let r4 = Math.floor(rgb.r / 16).toString(16), g4 = Math.floor(rgb.g / 16).toString(16), b4 = Math.floor(rgb.b / 16).toString(16);
             let hex12 = `${r4}${g4}${b4}`.toUpperCase();
-            
             let regOffset = (0x90 + (change.index * 2)).toString(16).toUpperCase();
             let waitLine = parseInt(y).toString(16).padStart(2, '0');
 
-            asm += `    dc.w    $${waitLine}07,$fffe  ; Sincronizar línea vertical Y = ${y}\n`;
-            asm += `    dc.w    $0${regOffset},$0${hex12}   ; Modificar Registro COLOR${String(change.index).padStart(2,'0')} -> $${hex12}\n`;
-
+            asm += `    dc.w    $${waitLine}07,$fffe  ; Sincronizar línea vertical Y = ${y}\n    dc.w    $0${regOffset},$0${hex12}   ; COLOR${String(change.index).padStart(2,'0')} -> $${hex12}\n`;
             cCode += `    { ${y}, 0x0${regOffset}, 0x0${hex12} }, // Línea ${y}\n`;
         });
-
         cCode += "    { 255, 0x0000, 0x0000 }\n};";
-        if(sortedLines.length === 0) {
-            asm += "; (No hay asignaciones dinámicas registradas)";
-        } else {
-            asm += "    dc.w    $ffff,$fffe      ; Fin de lista";
-        }
+        asm += sortedLines.length === 0 ? "; (No hay asignaciones)" : "    dc.w    $ffff,$fffe      ; Fin";
         document.getElementById('asm-output').value = asm;
         document.getElementById('c-output').value = cCode;
     }
 
+    // EXPORTACIÓN PCHG NATIVA
     function triggerIFFDownload() {
         let bpp = parseInt(document.getElementById('bpp-select').value);
-        let cmapSize = numColors * 3;
         let rowBytes = Math.ceil(width / 8); 
         let bodySize = rowBytes * bpp * height;
-        let totalSize = 48 + cmapSize + bodySize;
+        let cmapSize = numColors * 3;
 
-        let buffer = new ArrayBuffer(totalSize + 20);
+        let sortedPchgLines = Object.keys(copperChanges).sort((a, b) => a - b).map(Number);
+        let changedLinesCount = sortedPchgLines.length;
+
+        let lineMaskLongwords = Math.ceil(height / 32);
+        let lineMaskSize = lineMaskLongwords * 4;
+
+        let dataChangesSize = 0;
+        let lineStructuresData = []; 
+
+        let minRegGlobal = 32, maxRegGlobal = 0, maxChangesPerLine = 0, totalChangesGlobal = 0;
+
+        sortedPchgLines.forEach(y => {
+            let change = copperChanges[y];
+            let reg = change.index;
+            if(reg < minRegGlobal) minRegGlobal = reg;
+            if(reg > maxRegGlobal) maxRegGlobal = reg;
+
+            totalChangesGlobal++;
+            maxChangesPerLine = Math.max(maxChangesPerLine, 1);
+
+            let count16 = reg < 16 ? 1 : 0;
+            let count32 = reg >= 16 ? 1 : 0;
+
+            let rgb = hexToRgb(change.color);
+            let r4 = Math.floor(rgb.r / 16);
+            let g4 = Math.floor(rgb.g / 16);
+            let b4 = Math.floor(rgb.b / 16);
+            let packedColor = (r4 << 8) | (g4 << 4) | b4;
+            let finalUword = ((reg % 16) << 12) | packedColor;
+
+            lineStructuresData.push({
+                y: y,
+                c16: count16,
+                c32: count32,
+                uword: finalUword
+            });
+
+            dataChangesSize += 4; 
+        });
+
+        if(minRegGlobal > maxRegGlobal) { minRegGlobal = 0; maxRegGlobal = 0; }
+
+        let pchgHeaderSize = 20;
+        let totalPchgChunkSize = pchgHeaderSize + lineMaskSize + dataChangesSize;
+
+        let totalSize = 12 + 8 + 20 + 8 + cmapSize + 8 + totalPchgChunkSize + 8 + bodySize;
+        if (totalPchgChunkSize % 2 !== 0) totalSize += 1;
+
+        let buffer = new ArrayBuffer(totalSize);
         let view = new DataView(buffer);
         let offset = 0;
 
@@ -670,7 +895,10 @@
         function write16(val) { view.setUint16(offset, val, false); offset += 2; }
         function write8(val) { view.setUint8(offset++, val); }
 
-        writeStr("FORM"); write32(totalSize); writeStr("ILBM");
+        writeStr("FORM"); 
+        write32(totalSize - 8); 
+        writeStr("ILBM");
+
         writeStr("BMHD"); write32(20);
         write16(width); write16(height);
         write16(0); write16(0);
@@ -681,8 +909,38 @@
             write8(basePalette[i].r); write8(basePalette[i].g); write8(basePalette[i].b);
         }
 
-        writeStr("BODY"); write32(bodySize);
+        writeStr("PCHG");
+        write32(totalPchgChunkSize); 
 
+        write16(0); 
+        write16(1); 
+        write16(0); 
+        write16(height); 
+        write16(changedLinesCount); 
+        write16(minRegGlobal); 
+        write16(maxRegGlobal); 
+        write16(maxChangesPerLine); 
+        write32(totalChangesGlobal); 
+
+        let maskBits = new Uint32Array(lineMaskLongwords);
+        sortedPchgLines.forEach(y => {
+            let wordIdx = Math.floor(y / 32);
+            let bitPosition = 31 - (y % 32);
+            maskBits[wordIdx] |= (1 << bitPosition);
+        });
+        for(let i=0; i<lineMaskLongwords; i++) {
+            write32(maskBits[i]);
+        }
+
+        lineStructuresData.forEach(line => {
+            write8(line.c16);   
+            write8(line.c32);   
+            write16(line.uword); 
+        });
+
+        if (totalPchgChunkSize % 2 !== 0) write8(0);
+
+        writeStr("BODY"); write32(bodySize);
         for (let y = 0; y < height; y++) {
             for (let p = 0; p < bpp; p++) {
                 for (let bx = 0; bx < rowBytes; bx++) {
@@ -701,10 +959,10 @@
             }
         }
 
-        let blob = new Blob([buffer.slice(0, offset)], {type: "application/octet-stream"});
+        let blob = new Blob([buffer], {type: "application/octet-stream"});
         let link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
-        link.download = "dibujo_amiga.iff";
+        link.download = "dibujo_amiga_pchg.iff";
         link.click();
     }
 
